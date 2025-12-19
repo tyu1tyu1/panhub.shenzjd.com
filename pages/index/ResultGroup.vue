@@ -13,9 +13,13 @@
     </div>
     <ul class="card__list">
       <li v-for="(r, idx) in visibleItems" :key="idx" class="item">
-        <a class="item__title" :href="r.url" target="_blank" rel="noreferrer">{{
-          r.note || r.url
-        }}</a>
+        <a
+          class="item__title"
+          :href="r.url"
+          target="_blank"
+          rel="noopener noreferrer nofollow"
+          >{{ r.note || r.url }}</a
+        >
         <div class="item__meta">
           <span class="pill">{{ formatDate(r.datetime) || "时间未知" }}</span>
           <span v-if="r.password" class="pill pill--ok"

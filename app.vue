@@ -17,8 +17,8 @@
         v-model="settings"
         v-model:open="openSettings"
         :all-plugins="ALL_PLUGIN_NAMES"
-        :all-tg-channels="TG_DEFAULT_CHANNELS"
-        @save="onSaveSettings"
+        :all-tg-channels="allTgChannels"
+        @save="saveSettings"
         @reset-default="resetToDefault" />
     </ClientOnly>
   </div>
@@ -26,96 +26,23 @@
 
 <script setup lang="ts">
 import SettingsDrawer from "./pages/index/SettingsDrawer.vue";
+import { ALL_PLUGIN_NAMES } from "./config/plugins";
+import channelsConfig from "~/config/channels.json";
 
-const ALL_PLUGIN_NAMES = [
-  "pansearch",
-  "qupansou",
-  "panta",
-  "hunhepan",
-  "jikepan",
-  "labi",
-  "thepiratebay",
-  "duoduo",
-  "xuexizhinan",
-  "nyaa",
-];
-
-type UserSettings = {
-  enabledTgChannels: string[];
-  enabledPlugins: string[];
-  concurrency: number;
-  pluginTimeoutMs: number;
-};
-
+const { settings, loadSettings, saveSettings, resetToDefault } = useSettings();
 const openSettings = ref(false);
-// 默认展示所有插件，但默认不勾选 thepiratebay
-const DEFAULT_ENABLED_PLUGINS = [...ALL_PLUGIN_NAMES];
-const settings = ref<UserSettings>({
-  enabledTgChannels: [
-    ...((useRuntimeConfig().public as any).tgDefaultChannels || []),
-  ],
-  enabledPlugins: [...DEFAULT_ENABLED_PLUGINS],
-  concurrency: 4,
-  pluginTimeoutMs: 5000,
+
+// 所有可用的 TG 频道（用于设置面板）
+const allTgChannels = computed(() => {
+  const configChannels = (useRuntimeConfig().public as any)?.tgDefaultChannels;
+  return Array.isArray(configChannels) && configChannels.length > 0
+    ? configChannels
+    : channelsConfig.defaultChannels;
 });
-const LS_KEY = "panhub.settings";
 
-function loadSettings() {
-  if (typeof window === "undefined") return;
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return;
-    const parsed = JSON.parse(raw);
-    const next: UserSettings = {
-      enabledTgChannels: Array.isArray(parsed?.enabledTgChannels)
-        ? parsed.enabledTgChannels.filter((x: any) => typeof x === "string")
-        : [
-            ...(((useRuntimeConfig().public as any).tgDefaultChannels ||
-              []) as string[]),
-          ],
-      enabledPlugins: Array.isArray(parsed?.enabledPlugins)
-        ? parsed.enabledPlugins.filter((x: any) => typeof x === "string")
-        : [...DEFAULT_ENABLED_PLUGINS],
-      concurrency:
-        typeof parsed?.concurrency === "number" && parsed.concurrency > 0
-          ? Math.min(16, Math.max(1, parsed.concurrency))
-          : 4,
-      pluginTimeoutMs:
-        typeof parsed?.pluginTimeoutMs === "number" &&
-        parsed.pluginTimeoutMs > 0
-          ? parsed.pluginTimeoutMs
-          : 5000,
-    };
-    next.enabledPlugins = next.enabledPlugins.filter((x) =>
-      ALL_PLUGIN_NAMES.includes(x)
-    );
-    if (next.enabledPlugins.length === 0)
-      next.enabledPlugins = [...DEFAULT_ENABLED_PLUGINS];
-    settings.value = next;
-  } catch {}
-}
-function persistSettings() {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify(settings.value));
-  } catch {}
-}
-function onSaveSettings() {
-  persistSettings();
-}
-function resetToDefault() {
-  if (typeof window !== "undefined") {
-    try {
-      localStorage.removeItem(LS_KEY);
-    } catch {}
-    // 彻底恢复默认：刷新页面，让运行时默认与配置接管
-    window.location.reload();
-  }
-}
-
-onMounted(() => loadSettings());
-const TG_DEFAULT_CHANNELS = (useRuntimeConfig().public as any)
-  .tgDefaultChannels as string[];
+onMounted(() => {
+  loadSettings();
+});
 </script>
 
 <style>

@@ -1,4 +1,5 @@
 import { MemoryCache } from "../cache/memoryCache";
+import { createLogger } from "../utils/logger";
 import type {
   MergedLinks,
   SearchRequest,
@@ -6,6 +7,8 @@ import type {
   SearchResult,
 } from "../types/models";
 import { PluginManager, type AsyncSearchPlugin } from "../plugins/manager";
+
+const logger = createLogger("searchService");
 
 export interface SearchServiceOptions {
   defaultChannels: string[];
@@ -24,6 +27,11 @@ export class SearchService {
   constructor(options: SearchServiceOptions, pluginManager: PluginManager) {
     this.options = options;
     this.pluginManager = pluginManager;
+    logger.info("SearchService initialized", {
+      plugins: pluginManager.getPlugins().length,
+      cacheEnabled: options.cacheEnabled,
+      defaultConcurrency: options.defaultConcurrency,
+    });
   }
 
   getPluginManager() {
@@ -41,6 +49,14 @@ export class SearchService {
     cloudTypes: string[] | undefined,
     ext: Record<string, any> | undefined
   ): Promise<SearchResponse> {
+    logger.info("Search started", {
+      keyword,
+      sourceType,
+      plugins,
+      channels: channels?.length,
+      concurrency,
+      forceRefresh,
+    });
     const effChannels =
       channels && channels.length > 0 ? channels : this.options.defaultChannels;
     const effConcurrency =
@@ -124,6 +140,14 @@ export class SearchService {
         merged_by_type: mergedLinks,
       };
     }
+
+    logger.info("Search completed", {
+      keyword,
+      total,
+      platforms: Object.keys(mergedLinks),
+      resultType: effResultType,
+    });
+
     return response;
   }
 
@@ -137,10 +161,16 @@ export class SearchService {
     const chList = Array.isArray(channels) ? channels : [];
     const cacheKey = `tg:${keyword}:${[...chList].sort().join(",")}`;
     const { cacheEnabled, cacheTtlMinutes } = this.options;
+
     if (!forceRefresh && cacheEnabled) {
       const cached = this.tgCache.get(cacheKey);
-      if (cached.hit && cached.value) return cached.value;
+      if (cached.hit && cached.value) {
+        logger.debug("TG cache hit", { keyword, channels: chList.length });
+        return cached.value;
+      }
     }
+
+    logger.debug("TG search started", { keyword, channels: chList.length });
 
     // 控制并发抓取频道公开页并解析（避免一次性打满连接被限流）
     const { fetchTgChannelPosts } = await import("./tg");
@@ -172,7 +202,8 @@ export class SearchService {
         runnerTasks,
         concurrency
       );
-    } catch {
+    } catch (error) {
+      logger.error("TG search failed", error);
       return [];
     }
     const results: SearchResult[] = [];
@@ -182,7 +213,10 @@ export class SearchService {
 
     if (cacheEnabled && results.length > 0) {
       this.tgCache.set(cacheKey, results, cacheTtlMinutes * 60_000);
+      logger.debug("TG cache stored", { keyword, results: results.length });
     }
+
+    logger.debug("TG search completed", { keyword, results: results.length });
     return results;
   }
 
@@ -199,10 +233,16 @@ export class SearchService {
       .sort()
       .join(",")}`;
     const { cacheEnabled, cacheTtlMinutes } = this.options;
+
     if (!forceRefresh && cacheEnabled) {
       const cached = this.pluginCache.get(cacheKey);
-      if (cached.hit && cached.value) return cached.value;
+      if (cached.hit && cached.value) {
+        logger.debug("Plugin cache hit", { keyword, plugins });
+        return cached.value;
+      }
     }
+
+    logger.debug("Plugin search started", { keyword, plugins });
 
     const allPlugins = this.pluginManager.getPlugins();
     let available: AsyncSearchPlugin[] = [];
@@ -234,7 +274,7 @@ export class SearchService {
           (!results || results.length === 0) &&
           (keyword || "").trim().length <= 1
         ) {
-          const fallbacks = ["电影", "movie", "1080p"]; // 覆盖中文/英文/分辨率常见关键词
+          const fallbacks = ["电影", "movie", "1080p"];
           for (const fb of fallbacks) {
             results = await this.withTimeout<SearchResult[]>(
               p.search(fb, ext),
@@ -245,7 +285,8 @@ export class SearchService {
           }
         }
         return results || [];
-      } catch {
+      } catch (error) {
+        logger.warn(`Plugin ${p.name()} failed`, error);
         return [] as SearchResult[];
       }
     });
@@ -256,7 +297,10 @@ export class SearchService {
 
     if (cacheEnabled) {
       this.pluginCache.set(cacheKey, merged, cacheTtlMinutes * 60_000);
+      logger.debug("Plugin cache stored", { keyword, results: merged.length });
     }
+
+    logger.debug("Plugin search completed", { keyword, results: merged.length });
     return merged;
   }
 
