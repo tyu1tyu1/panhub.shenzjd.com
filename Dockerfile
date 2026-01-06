@@ -56,7 +56,6 @@ RUN apk add --no-cache \
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/.output ./.output
 COPY --from=builder /app/package.json ./
-COPY --from=builder /app/pnpm-lock.yaml ./ 2>/dev/null || true
 
 # 创建 data 目录并设置权限（用于 SQLite 持久化）
 RUN mkdir -p /app/data && chmod 777 /app/data
