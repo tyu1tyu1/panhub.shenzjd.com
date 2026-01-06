@@ -32,20 +32,38 @@ export class HotSearchSQLiteService {
    */
   private initDatabase(): void {
     try {
+      console.log('[HotSearchSQLite] 🔍 开始初始化数据库...');
+
       // 动态导入 better-sqlite3
+      console.log('[HotSearchSQLite] 🔍 尝试加载 better-sqlite3 模块...');
       const Database = require('better-sqlite3');
+      console.log('[HotSearchSQLite] ✅ better-sqlite3 模块加载成功');
 
       // 确保数据目录存在
+      console.log(`[HotSearchSQLite] 🔍 检查数据目录: ${this.DB_DIR}`);
       if (!existsSync(this.DB_DIR)) {
         mkdirSync(this.DB_DIR, { recursive: true });
-        console.log(`[HotSearchSQLite] 创建数据目录: ${this.DB_DIR}`);
+        console.log(`[HotSearchSQLite] ✅ 创建数据目录: ${this.DB_DIR}`);
+      } else {
+        console.log(`[HotSearchSQLite] ✅ 数据目录已存在: ${this.DB_DIR}`);
+      }
+
+      // 检查目录权限
+      try {
+        const fs = require('fs');
+        fs.accessSync(this.DB_DIR, fs.constants.W_OK);
+        console.log(`[HotSearchSQLite] ✅ 数据目录可写`);
+      } catch (err) {
+        console.log(`[HotSearchSQLite] ⚠️ 数据目录不可写: ${err.message}`);
       }
 
       // 打开数据库（自动创建）
+      console.log(`[HotSearchSQLite] 🔍 打开数据库: ${this.DB_PATH}`);
       this.db = new Database(this.DB_PATH);
       console.log(`[HotSearchSQLite] ✅ SQLite 数据库已初始化: ${this.DB_PATH}`);
 
       // 创建表（如果不存在）
+      console.log('[HotSearchSQLite] 🔍 创建/验证表结构...');
       this.db.exec(`
         CREATE TABLE IF NOT EXISTS hot_searches (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,8 +76,17 @@ export class HotSearchSQLiteService {
 
       console.log(`[HotSearchSQLite] ✅ 表结构已创建/验证完成`);
 
+      // 验证数据库是否可写
+      console.log('[HotSearchSQLite] 🔍 验证数据库可写性...');
+      const testStmt = this.db.prepare('INSERT OR IGNORE INTO hot_searches (term, score, last_searched, created_at) VALUES (?, ?, ?, ?)');
+      testStmt.run('__test__', 1, Date.now(), Date.now());
+      const cleanupStmt = this.db.prepare('DELETE FROM hot_searches WHERE term = ?');
+      cleanupStmt.run('__test__');
+      console.log('[HotSearchSQLite] ✅ 数据库读写验证通过');
+
     } catch (error) {
-      console.log(`[HotSearchSQLite] ⚠️ 降级到内存模式:`, error instanceof Error ? error.message : error);
+      console.log(`[HotSearchSQLite] ❌ 数据库初始化失败:`, error instanceof Error ? error.message : error);
+      console.log(`[HotSearchSQLite] 💡 降级到内存模式，数据将不会持久化`);
       // 降级到内存模式（不持久化）
       this.initMemoryFallback();
     }
@@ -351,13 +378,27 @@ export class HotSearchSQLiteService {
       if (existsSync(this.DB_PATH)) {
         const stats = statSync(this.DB_PATH);
         const size = Math.round((stats.size / (1024 * 1024)) * 100) / 100;
-        console.log(`[HotSearchSQLite] 数据库大小: ${size} MB`);
+        console.log(`[HotSearchSQLite] 📊 数据库文件大小: ${size} MB (${stats.size} bytes)`);
         return size;
       } else {
-        console.log(`[HotSearchSQLite] 数据库文件不存在: ${this.DB_PATH}`);
+        console.log(`[HotSearchSQLite] ⚠️ 数据库文件不存在: ${this.DB_PATH}`);
+        // 检查目录是否存在
+        if (existsSync(this.DB_DIR)) {
+          console.log(`[HotSearchSQLite] ℹ️ 数据目录存在但数据库文件缺失`);
+          // 列出目录内容
+          try {
+            const { readdirSync } = require('fs');
+            const files = readdirSync(this.DB_DIR);
+            console.log(`[HotSearchSQLite] 📁 数据目录内容: ${files.length > 0 ? files.join(', ') : '(空)'}`);
+          } catch (e) {
+            console.log(`[HotSearchSQLite] ❌ 无法读取数据目录: ${e.message}`);
+          }
+        } else {
+          console.log(`[HotSearchSQLite] ❌ 数据目录不存在: ${this.DB_DIR}`);
+        }
       }
     } catch (error) {
-      console.log(`[HotSearchSQLite] 获取数据库大小失败:`, error instanceof Error ? error.message : error);
+      console.log(`[HotSearchSQLite] ❌ 获取数据库大小失败:`, error instanceof Error ? error.message : error);
     }
     return 0;
   }

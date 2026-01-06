@@ -64,6 +64,21 @@ jobs:
           VER=$(node -p "require('./package.json').version")
           echo "version=$VER" >> $GITHUB_OUTPUT
 
+      - name: Build test image (linux/amd64 only)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          platforms: linux/amd64
+          tags: panhub-test:latest
+          cache-from: type=gha
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+      - name: Test better-sqlite3 in container
+        run: |
+          docker run --rm panhub-test:latest node -e "try { require('better-sqlite3'); console.log('✅ better-sqlite3 works'); } catch(e) { console.error('❌ better-sqlite3 failed:', e.message); process.exit(1); }"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -75,6 +90,10 @@ jobs:
             ghcr.io/${{ github.repository }}:${{ steps.ver.outputs.version }}
             ghcr.io/${{ github.repository }}:latest
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
 
       - name: Extract metadata (tags, labels) for Docker Hub
         id: meta_dh
